@@ -11,7 +11,7 @@ The Verifier is concerned about integrity and confidentiality and requires a pro
 
 1.   Member’s hardware is genuine, attested by the provision entity in a manner that the verifier is able to identify devices in the field by secure cryptographic methods
 1.   Member’s hardware runs exactly the code as published open source by the Trusted Software Source
-1.   Data supplied to the TEE is treated confidentially (fulfilled if all the above holds and the TEE design is trusted)
+1.   Data supplied to the TEE is treated confidentially 
 
 To fulfill these requirements each role is specified in the following sections.
 
@@ -27,38 +27,53 @@ To fulfill these requirements each role is specified in the following sections.
 The hardware manufacturer has to be trusted.
 
 ### Trusted Software Source
-To generate an open source flash image, which is signed, is problematic. Because the one who is signing is a new root of trust. Therefore, in this concept this root is spread over a lot of participants to get to an open source like root of trust. The diagram below visualizes our approach. On the left side is the open source code visible for everyone. Everything that follows is constructed under the assumption that the parties have established secure communication channels. All parties (Web3, SCS, ...) collaborate in the Multi-Party-Computation (MPC) RSA generation (better source is needed). As a result, everyone receives the public key and a part of the private key. Therefore, they can only together generate a signature. This is used to build a binary that only can be signed by all parties together. They take the source code and build it deterministically. Afterwards, they sign the hash of their binary and exchange it with each other. Then, they check the hash in the others signatures, if the hashes are correct, the combine the signatures to the final signature. This signature can be verified with the public key. With this protocol everybody can build the binary and verify it, which leads to the following assumptions:
+To generate an open source flash image, which is signed, is problematic. Because the one who is signing is a new root of trust. Therefore, in this concept this root is spread over a lot of participants to get to an open source like root of trust. Therefore the parties should be as independent as possible. The diagram below visualizes our approach. On the left side is the open source code visible for everyone. Everything that follows is constructed under the assumption that the parties have established secure communication channels. All parties (Web3, SCS, ...) collaborate in the Multi-Party-Computation (MPC) RSA generation. As a result, everyone receives the public key and a part of the private key. Therefore, they can only together generate a signature. This is used to build a binary that only can be signed by all parties together. They take the source code and build it deterministically. Afterwards, they sign their binary and exchange it with each other. Then, they check the binaries from the other parties, if they are the same, they combine the signatures to the final signature. This signature can be verified with the public key. With this protocol everybody can build the binary and verify it, which leads to the following assumptions:
 
 *   All parties are involved in a signature
-*    Together they are the root of trust, therefore they should be independent organizations
+*   Together they are the root of trust
 
 ![Concept](./fig/ra-by-distributor-trusted-software-source.svg)
 
 ### Provision Entity
-To explain the role of the Provision Entity an example with AVNet is given. AVNet receives two things from the trusted software source, the binary flash image and the eFuse configuration. The eFuses ensures that only singned software can boot. The hardware manufacturer delivers the hardware. In this approach an AVNet Ultra96 is used. This board features a Xilinx Ultrascale+ MPSoC, which has some essential security features built-in. To fulfill the requirements AVNet has to burn the eFuses with the correct Values and load the Flash with the image. Also, with every Ultra96 a letter should be shipped. This letter contains the data set needed to perform a remote attestation. To write the data to the letter, QR-Codes could be used. Furthermore, to generate the attestation data a HSM is necessary. The HSM has to generate two different keys. At first it needs an RSA keypair, where the public key is written directly to the attestation data set. Secondly, the HSM generates a AES-256 key, which is then used to encrypt the private RSA key. This encrypted RSA key is then written to the attestation data. After the encryption the AES-256 key is burnt into the eFuses. Afterwards, all the keys have to be forgotten by AVNet. To complete the attestation data, AVNet has to sign the public RSA key and the encrypted private RSA key. This is done with an AVNet specific private RSA key. The public part of this key has to be made public available for everyone to access it. After this process, these assumptions can be made:
+The provision entity has the task to prepare devices for remote attestation. This makes her to the main root of trust. Therfor she has to be trustworthy and she also needs appropriate hardware. Which means that she needs at least HSM (Hardware Security Module). Better she has an access authorisation system for the facilities. To provision devices, the provision entity has to execut the following steps:
 
-*    AVNet has burnt the eFuses in a way that only signed software can boot
-*    The only bootable software comes from the trusted software source
-*    AVNet has burnt a AES-256 key into the eFuses, which is not extractable
-*    Nobody knows the AES-256 key anymore
-*    Nobody can decrypt the private RSA key, execpt the matching hardware
-*    The public RSA key, which is public available, can be used to verify an attestation data set
+* Get hardware form the hardware manufacturer
+* Get the software from the trusted software source 
+* Check the hardware and the software 
+* Enable secure boot
+* Generate the attestation data
+* Sell the devices publicly
 
-![Concept](./fig/ra-by-distributor-provision-entity.svg)
+![Concept](./fig/ra-by-distributor-pe-1.svg)
+
+The first two steps are obvious. Get the hard and software form the coresponding sources. The next step is quite important. The provision entity has to check, if the hardware is not tampered. Because later, with her signture, she states that the hardware is trustworthy.
+
+The next step is to enable secure boot. This means that the provision entity takes the public key from the trusted software source (the one generated in the MPC process) burn it into the devices. Also eFuses are burnt to harden the device. This step is hardware dependend. In some devices only the hash of this public key is burnt in, but its sufficient to enable secure boot. In the literature this key is often referred as the vendor key.
+
+The most unique step is to generate the attestation data. The provsion entity gernerates with the HSM a per device unique keypair. This keypair is called the Attestation Identifier Key, because it is used to identify the device for attestation. Then also a device unique key called Endorsement Key (EK) is used. The origin of this key is hardware dependent. In some devices this key is already embedded in the device. And in others the key can be choosen and written to OTP (One Time Programmable Memory). Where it is impossible to read it back and only accesible through the on chip crypto engine. The EK is then used to encrypt the private part of the AIK. Then the public AIK and the ecrypted private AIK are signed with the Provision Entity Key (PE-Key). These three parts form the attestation data.
+
+The PE-Key is certified by a root CA and the public part of this key has to be publicly aviable. The verifier later needs this key.
+
+The attestaion data is added to the device. Becuase the attestation data is not confidential. It can be saved anywhere on the device.
+
+Another important point is that the provision entity has to guarante that she forget the EK and the AIK. In some devices the prvison entity has never access to the EK. This is good nor bad, because it just shifts trust from the provision entity to the hardware manufacturer.
+
+The last step is to sell the provisioed devices to people who want to operate the hardware. They are called members, because they can become a part of the network.
+
+![Concept](./fig/ra-by-distributor-pe-2.svg)
 
 ### Member
-The member buys a device from the provision entity. This device can only boot from signed images, which performs a secure boot with the image from the flash. This image sets up a system, that is split in two halves. In on half starts a rich OS, which is considered untrusted. In the other half starts a secure OS. This half is protected from the other side with ARM Trust Zone. After the setup, a trusted computing base is established. Due to the fact, that the secure OS inside the trust zone, it can enforce every restriction we like. Furthermore, the member receives a letter, which contains the attestation data. The member has to feed this data manually into the system.
+The member buys a device from the provision entity. This device can only boot from signed images, which are signed by the trusted software source. These images then perform a secure boot. This image sets up a system, that is split in two halves. In one half starts a rich OS, which is considered untrusted. In the other half starts a secure OS. This half is protected from the other side with ARM Trust Zone. The secure OS (for example OPTEE) is able to host different TEEs in paralell and esures an encapsulation of these TEEs. 
 
 ![Concept](./fig/ra-by-distributor-member.svg)
 
 ### Verifier
-To perform an actual remote attestation, the verifier needs at first the public key from the PE. Then the verifier sends a request to the Member. He answers with the attestation data, which contains the public RSA key from his own keypair. Also, the encrypted private key is in the request, the verifier does not need this key, but he needs it to verify the signature of the whole attestation data. At last, there is the signature from the PE in the request. The verifier checks this signature with the public key from the PE. Afterward, he constructs a challenge, which is in the simplest case a random number. This random number has to be signed by the member with his own private key. The verifier sends it back to the Member and waits for the response. The member decrypts his private RSA key and uses it to sign the random number. Then the member sends the signature back. The verifier is able to check this signature with the public key, which he received in the request. If the signature is valid, the following statements can be made:
+To perform an actual remote attestation, the verifier needs at first the public key from the provision entity. Then the verifier waits on request from the Member. When he wants to join, he send his request, the attestation data. The verifier then validates the attestation data. If the data is valid, he knows the public AKI. To validate the public AIK, he generates a challenge. The simplest challenge is a random number. This number is sent to the member. The member decrypts the private AIK and signs the random number with it. Afterwards he sends the signature back with some system measurments. The verifier can validate the signature. If the signature is valid, the verifier can make the following assumptions:
 
-1.    The member owns hardware, which is capable of decrypting the private key
-1.    Therefore he owns hardware, which is provisioned by the provision Entity.
-1.    Therefore the hardware runs a image, which is signed by the trusted software source.
-1.    Therefore the software/hardware are runnig trusted TEEs, which provides confidentially
+1. The private AIK used to forge the signature belongs to the public AIK from the attestation data, therefore there a valid keypair
+1. The AIK was gernerated by the provision entity, because it is signed with the PE-Key
+1. The device is a provisioned hardware, because the hardware is the only one which knows the EK and therefore is able to decrypt the private AIK.
+1. The hardware has booted a trustful system, because the eFuses were burnt by the provision entity
 
-To refer back to the beginning, with statement 2 is requirement 1 fullfiled and statement 3 fulfils the 2nd requirement. Finally, statement 4 fulfils requirement 3.
 
 ![Concept](./fig/ra-by-distributor-verifier.svg)
